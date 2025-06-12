@@ -1,0 +1,25 @@
+<<<<<<< HEAD
+et_xmlfile==2.0.0
+numpy==2.3.0
+openpyxl==3.1.5
+packaging==25.0
+pandas==2.3.0
+pillow==11.2.1
+pytesseract==0.3.13
+python-dateutil==2.9.0.post0
+pytz==2025.2
+six==1.17.0
+tzdata==2025.2
+=======
+et_xmlfile==2.0.0
+numpy==2.3.0
+openpyxl==3.1.5
+packaging==25.0
+pandas==2.3.0
+pillow==11.2.1
+pytesseract==0.3.13
+python-dateutil==2.9.0.post0
+pytz==2025.2
+six==1.17.0
+tzdata==2025.2
+>>>>>>> ac4500f (actualizacion 2)

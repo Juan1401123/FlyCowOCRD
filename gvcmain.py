@@ -1,38 +1,20 @@
+import io
 import pandas as pd
 import PIL
 import openpyxl
 from PIL import Image, ImageEnhance
-import pytesseract
-import numpy as np
-import math
-from PIL import ImageFilter,ImageDraw
-import ast
+from google.cloud import vision
+import time
 import os
-import google.generativeai as genai
-from google import generativeai
-from google.generativeai import types
-from PIL import Image
-import json
-import requests
+import numpy as np
+from PIL import Image,ImageFilter,ImageDraw
+import math
 
-apikey=''
-
+keygooglecloudvision=''
 inputimg='C:\\Users\\juana\\Documents\\FlyCowOCR\\img-input2'
 
-
-
-e1=[]
-e2=[]
-e3=[]
-e4=[]
-e5=[]
-e6=[]
-e7=[]
-e8=[]
-e9=[]
-e10=[]
-rowless_used=[]
-
+from google.cloud import vision
+client = vision.ImageAnnotatorClient(client_options={'api_key': keygooglecloudvision})
 
 def scale_width_and_pad_down(image, target_width=680, target_height=675, color=(255, 255, 255)):
     original_width, original_height = image.size
@@ -102,9 +84,20 @@ def cortar_por_primera_linea_negra(img, umbral_negro=75, tolerancia_blancos_rati
     
     return img
 
-import time
-from google.api_core.exceptions import ResourceExhausted
-genai.configure(api_key=apikey)
+
+e1=[]
+e2=[]
+e3=[]
+e4=[]
+e5=[]
+e6=[]
+e7=[]
+e8=[]
+e9=[]
+e10=[]
+rowless_used=[]
+
+
 
 
 for filename in os.listdir(inputimg):
@@ -113,64 +106,96 @@ for filename in os.listdir(inputimg):
         continue
 
     print(f"Procesando: {filename}")
+
+
     openimg = Image.open(filepath).convert('RGB')
     openimg = scale_width_and_pad_down(openimg)
-    openimg = openimg.convert('L')
-    openimg = openimg.crop((0, 59, openimg.width, openimg.height))
+    openimg = openimg.convert('L') 
+    openimg = openimg.crop((0, 59, openimg.width, openimg.height)) 
 
     enhancer = ImageEnhance.Contrast(openimg)
-    openimg = openimg.filter(ImageFilter.GaussianBlur(radius=.40))
+    openimg = openimg.filter(ImageFilter.GaussianBlur(radius=.40)) 
     openimg = enhancer.enhance(2)
-    openimg = cortar_por_primera_linea_negra(openimg)
-    imgtpocr = openimg
+    openimg = cortar_por_primera_linea_negra(openimg) 
+    imgtpocr = openimg 
+
 
     column_boundaries = find_column_boundaries(openimg)
-    row_size = 13
-    row_less = 0
+    row_size = 11
+    row_less = 0 
+
+
     pivotcolum = imgtpocr.crop((column_boundaries[5][0]-5, 0, column_boundaries[5][1]+15, openimg.height))
 
     for x in range(1):
         width, height = pivotcolum.size
-        n_round = math.floor(height / (row_size - 1.5))  
+        n_round = math.floor(height / (row_size))
+
         for e in range(n_round):
             top = e * row_size
             bottom = top + row_size
-            row_pivotcolum = pivotcolum.crop((0, top + row_less, width, bottom + row_less))
-            while True:
-                try:
-                    model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
-                    response = model.generate_content(
-                        [row_pivotcolum, "Extract all the text or numbers from this image, only respond with what is extracted as it is in the image"]
-                    )
-                    break
-                except ResourceExhausted:
-                    time.sleep(40)
-            keyword = response.text.replace('\n', ' ').strip()
+            row_pivotcolum = pivotcolum.crop((0, top -2, width, bottom + 2))
+
+    
+            byte_stream = io.BytesIO()
+            row_pivotcolum.save(byte_stream, format='PNG')
+            image_bytes = byte_stream.getvalue()
+            gc_vision_image = vision.Image(content=image_bytes)
+
+
+            try:
+
+                response = client.document_text_detection(image=gc_vision_image)
+                keyword = response.full_text_annotation.text.replace('\n', ' ').strip()
+                if response.error.message:
+                    print(f"Error de API para {filename} (keyword detection): {response.error.message}")
+                    keyword = "" 
+            except Exception as api_error:
+                print(f"Excepción al llamar a la API para {filename} (keyword detection): {api_error}")
+              
+                time.sleep(10) 
+                keyword = ""
+
             if keyword == 'No Ice':
-                    
                 print('keyword search in row less ' + str(row_less), keyword)
                 rowless_used.append(row_less)
+
                 for i, (x0, x1) in enumerate(column_boundaries):
+                    # Lógica de recorte de columnas basada en 'i'
                     if x0 + 10 < x1 and i == 1:
                         col_crop = imgtpocr.crop((x0 - 38, 0, x1 + 15, openimg.height))
                     elif x0 + 10 < x1 and i == 0:
                         col_crop = imgtpocr.crop((x0 - x0, 0, x1 + 30, openimg.height))
                     elif x0 + 10 < x1:
                         col_crop = imgtpocr.crop((x0 - 5, 0, x1 + 15, openimg.height))
+                    else: # Si la condición x0 + 10 < x1 no se cumple, maneja este caso
+                        print(f"Saltando columna {i} debido a tamaño insuficiente: {x1 - x0}")
+                        continue # Salta a la siguiente iteración del bucle 'for i'
+
                     width, height = col_crop.size
-                    row_crop = col_crop.crop((0, top, width, bottom+23)) 
+                    
+                    row_crop = col_crop.crop((0, top-3, width, bottom + 23))
 
-                    while True:
-                        try:
-                            model = genai.GenerativeModel(model_name="models/gemini-1.5-flash")
-                            response = model.generate_content(
-                                [row_crop, "Extract all the text or numbers from this image, only respond with what is extracted as it is in the image"]
-                            )
-                            break
-                        except ResourceExhausted:
-                            time.sleep(40)
+           
+                    byte_stream_col = io.BytesIO()
+                    row_crop.save(byte_stream_col, format='PNG')
+                    image_bytes_col = byte_stream_col.getvalue()
+                    gc_vision_image_col = vision.Image(content=image_bytes_col)
 
-                    text = response.text.replace('\n', ',')
+                  
+                    try:
+                       
+                        response_col = client.document_text_detection(image=gc_vision_image_col)
+                        text = response_col.full_text_annotation.text.replace('\n', ',').strip()
+                        if response_col.error.message:
+                            print(f"Error de API para {filename}, col {i}: {response_col.error.message}")
+                            text = "" 
+                    except Exception as api_error_col:
+                        print(f"Excepción al llamar a la API para {filename}, col {i}: {api_error_col}")
+                        time.sleep(10) 
+                        text = "" 
+
+                
                     if i == 0:
                         e1.append(text)
                     elif i == 1:
@@ -190,8 +215,8 @@ for filename in os.listdir(inputimg):
                     elif i == 8:
                         e9.append(text)
 
-                    print('Spin ' + str(x), 'column ' + str(i), 'page ' + str(filename), 'row less: ' + str(row_less))
-        row_less += 3
+                    print('Spin ' + str(x), 'column ' + str(i), 'page ' + str(filename), 'row less: ' + str(row_less), f'Extracted: "{text}"')
+    row_less += 3 
 
 
 sample=({
@@ -223,13 +248,13 @@ df = pd.DataFrame(df, columns=['QTY'])
 
 df['Description']=pre_data['column1']
 df['Note/Carrier']=None
-df['Note/Carrier']=df['Description'].str.extract(r'\(([a-zA-Z]+)\)')
+df['Note/Carrier']=df['Description'].str.extract(r'\(([a-zA-Z-]+)\)')
 df['Face or Leg'] = pre_data['column2'].apply(
-    lambda x: x.split(' ')[0] if isinstance(x, str) and x.strip() else None
+    lambda x: x.split(',')[0] if isinstance(x, str) and x.strip() else None
 )
 
 df['Offset Type'] = pre_data['column2'].apply(
-    lambda x: ' '.join(x.split(' ')[1:]) if isinstance(x, str) and x.strip() else None
+    lambda x: ' '.join(x.split(',')[1:]) if isinstance(x, str) and x.strip() else None
 )
 
 def get_part(x, idx):
@@ -259,6 +284,12 @@ df['Weight (No Ice) Weight']=pre_data['column9'].apply(lambda x: safe_split(x, 0
 df['Weight (1/2" Ice) Weight']=pre_data['column9'].apply(lambda x: safe_split(x, 1))
 
 
+for index, e in enumerate(df['Face or Leg']):
+    if e in ['From Leg','from Leg','from leg']:
+        df['Offset Type'][index]='From Leg'
+        df['Face or Leg'][index]=None
+
+df.loc[df['Face or Leg'].notna(), 'Face or Leg'] = df['Face or Leg'].str.upper()
 
 df.to_csv('document_on_text.csv',index=False)
 df.to_excel('document_on_text.xlsx',index=False)
